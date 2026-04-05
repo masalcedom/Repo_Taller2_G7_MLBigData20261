@@ -63,9 +63,13 @@ library(boot)
 library(ggplot2)
 
 require("pacman")
-p_load(tidyverse, # Para manipulación de datos.
-       glmnet, # Para estimar Elastic NET
-       caret # Para facilitar el entrenamiento de los modelos
+p_load(rio,           # import/export data
+       tidyverse,     # tidy-data
+       glmnet,        # To implement regularization algorithms. 
+       pROC,          # construir curva ROC y PR 
+       caret,         # To estimate predictive models.
+       MLmetrics,
+       Metrics        # To evaluate predictive models.
 )
 
 # ==============================================================
