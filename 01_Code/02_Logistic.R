@@ -64,7 +64,7 @@ multiStats <- function(...){
   )
 }
 
-
+# Cración de la grilla de hiperparámetros para el 
 set.seed(1999)
 folds <- createFolds(train$Pobre, k = 5, returnTrain = TRUE)
 
@@ -73,93 +73,67 @@ en_grid <- expand.grid(
   lambda = 10^seq(-3, 3, length = 5)
 )
 
+#creación del control para el entrenamiento
+
 ctrl_accuracy <- trainControl(
   method = "cv",                 # usamos validación cruzada
   number = 5,                    # dividimos los datos en 5 folds
   index = folds,                 # reutilizamos los mismos folds
   classProbs = TRUE,             # el modelo debe calcular probabilidades de clase
   savePredictions = "final",      # guarda predicciones solo del mejor tune
-  summaryFunction = multiStats
+  summaryFunction = multiStats,
+  allowParallel = TRUE
 )
 
-enet_bench <- train(
-  Pobre ~ .,
-  data = train,
-  metric = "Accuracy",
-  method = "glmnet",
-  trControl = ctrl_accuracy,
-  tuneGrid = en_grid,
+
+system.time(
+  enet_bench <- train(
+    Pobre ~ .,
+    data = train,
+    metric = "Accuracy",
+    method = "glmnet",
+    trControl = ctrl_accuracy,
+    tuneGrid = en_grid,
+  )
 )
 enet_bench
 
-# Preparación de envío a Kagel
-
-enet_bench_yhat <- test |>
-  mutate(
-    pobre_lab = caret:::predict.train(enet_bench,
-                                      newdata = test,
-                                      type = "raw")
-  ) |>
-  select(id,pobre_lab) |> 
-  mutate(pobre=ifelse(pobre_lab=="Yes",1,0)) |>
-  select(id, pobre)
-
-test |> mutate(
-  pobre_lab = caret:::predict.train(enet_bench,
-                                    test,
-                                    'prob')$Yes > 0.5 
-)|>
-  select(id,pobre_lab) |> 
-  mutate(pobre=ifelse(pobre_lab=="Yes",1,0)) |>
-  select(id, pobre)
-
-head(enet_bench_yhat)
-
-## Creación de archivo .csv para subir a Kaggle
-
-lambda_str <- gsub(
-  "\\.", "_", 
-  as.character(round(enet_bench$bestTune$lambda, 4)))
-alpha_str <- gsub("\\.", "_", as.character(enet_bench$bestTune$alpha))
-
-name <- paste0(
-  "EN_lambda_", lambda_str,
-  "_alpha_" , alpha_str, 
-  ".csv"
-) 
-
-write.csv(enet_bench_yhat,name, row.names = FALSE)
-
 ## Explorando con metrica F1
 
-ctrl_f1 <- trainControl(
-  method = "cv",
-  number = 5,
-  index = folds,
-  classProbs = TRUE,
-  summaryFunction = multiStats,
-  savePredictions = "final",
-  verboseIter = TRUE
-)
+## Se crea el control para la métrica con F1
 
-# Elastic Net
+  ctrl_f1 <- trainControl(
+    method = "cv",
+    number = 5,
+    index = folds,
+    classProbs = TRUE,
+    summaryFunction = multiStats,
+    savePredictions = "final",
+    verboseIter = TRUE
+  )
+
+# Elastic_net para la métrica de F
 set.seed(2025)
-elastic_net <- train(
-  Pobre ~ .,
-  data = train,
-  method = "glmnet",
-  family = "binomial",
-  tuneGrid = en_grid,
-  trControl = ctrl_f1,
-  metric = "F"        # seleccionamos F1
+system.time(
+  elastic_net <- train(
+    Pobre ~ .,
+    data = train,
+    method = "glmnet",
+    family = "binomial",
+    tuneGrid = en_grid,
+    trControl = ctrl_f1,
+    metric = "F"        # seleccionamos F1
+  )
 )
 
-##elastic_net
+##elastic_net 
 
-
+#valore reales 
 yhat <- elastic_net$pred$obs[elastic_net$pred$lambda==elastic_net$bestTune$lambda]
+#Probabilidades predichas por el modelo
 phat <- elastic_net$pred$Yes[elastic_net$pred$lambda==elastic_net$bestTune$lambda]
 
+## Se realiza el procedimiento para encontrar elastic_net con Elastic Net + un threshold óptimo PR
 roc_elastic_net <-pROC::roc(
   response = yhat,  # Valores reales de la variable objetivo
   predictor = phat, # Probabilidades predichas por el modelo
@@ -213,14 +187,14 @@ head(pr_cutoffs)
 ## Se agrega la columna del F1
 pr_cutoffs<- pr_cutoffs  %>% mutate(F1=(2*precision*recall)/(precision+recall))
 pr_cutoffs
-
+## Se escoge el cutoff que máximiza el F1
 best_cutoff <- pr_cutoffs %>%
   arrange(desc(F1)) %>%
   slice(1)
 
 best_cutoff
 
-plot(pr_cutoffs)
+# plot(pr_cutoffs)
 
 
 ## Graficar solo el F1
@@ -246,7 +220,7 @@ ggplot(pr_cutoffs, aes(x = threshold, y = F1)) +
   ) +
   theme_minimal()
 
-##
+## Trade off Precision Recall
 
 ggplot(pr_cutoffs, aes(x = recall, y = precision, color = F1)) +
   geom_path(linewidth = 1) +
@@ -312,6 +286,8 @@ bind_rows(
     F1 = unname(cm_en_pr$byClass["F1"])
   )
 )
+
+
 
 
 ## Rebalanceo de clases 
@@ -423,3 +399,169 @@ en_comparison %>%
   mutate(
     across(c(alpha, lambda, threshold, precision, recall, F1), round, 3)
   )
+
+##Preparación de envío a Kagel
+
+enet_bench_yhat <- test |>
+  mutate(
+    pobre = ifelse(predict(enet_bench, newdata = test) == "Yes", 1, 0)
+  ) |>
+  select(id, pobre)
+
+
+
+# enet_bench_yhat <- test |>
+#   mutate(
+#     pobre_lab = caret:::predict.train(enet_bench,
+#                                       newdata = test,
+#                                       type = "raw")
+#   ) |>
+#   select(id,pobre_lab) |>
+#   mutate(pobre=ifelse(pobre_lab=="Yes",1,0)) |>
+#   select(id, pobre)
+
+probs <- predict(enet_bench, newdata = test, type = "prob")$Yes
+
+enet_bench_yhat <- test |>
+  mutate(
+    pobre = ifelse(probs > best_cutoff[1,1], 1, 0)
+  ) |>
+  select(id, pobre)
+
+
+enet_bench_yhat <- test |>
+  mutate(
+    pobre = ifelse(probs > best_cutoff[1,1], 1, 0)
+  ) |>
+  select(id, pobre)
+
+test |> mutate(
+  pobre_lab = caret:::predict.train(enet_bench,
+                                    test,
+                                    'prob')$Yes > best_cutoff[1,1]
+)|>
+  select(id,pobre_lab) |>
+  mutate(pobre=ifelse(pobre_lab=="Yes",1,0)) |>
+  select(id, pobre)
+
+head(enet_bench_yhat)
+
+## Creación de archivo .csv para subir a Kaggle
+
+lambda_str <- gsub(
+  "\\.", "_",
+  as.character(round(enet_bench$bestTune$lambda, 4)))
+alpha_str <- gsub("\\.", "_", as.character(enet_bench$bestTune$alpha))
+
+name <- paste0(
+  "EN_PR_lambda_", lambda_str,
+  "_alpha_" , alpha_str,
+  ".csv"
+)
+
+write.csv(enet_bench_yhat,name, row.names = FALSE)
+
+## Linear_R
+train1 <- train 
+
+train1$Pobre <- ifelse(train1$Pobre == "Yes", 1, 0)
+
+dummies <- dummyVars(~ ., data = train1)
+
+data_train_dum <- predict(dummies, newdata = train1)
+
+
+train_transf <- predict(dummies, newdata = train1)
+
+train_transf <- as.data.frame(train_transf)
+#train_pobre <- createFolds(train1$Pobre, k = 5, returnTrain = TRUE)
+
+data_train_dum <- createFolds(train1$Pobre, k = 5, returnTrain = TRUE)
+
+## Se crea el control para el método LM
+
+control <- trainControl(
+  method = "cv",
+  number = 5,
+  savePredictions = "final"
+)
+
+## Se crea el benchmark para la evaluación del modelo
+train_transf$Pobre <- train1$Pobre
+
+modelo_lpm <- train(
+  Pobre ~ ., 
+  data =train_transf,
+  method = "lm",
+  trControl = control
+)
+
+pred_df <- modelo_lpm$pred
+head(pred_df)
+
+pred_df$pred_class <- ifelse(pred_df$pred > 0.5, 1, 0)
+
+confusionMatrix(
+  factor(pred_df$pred_class),
+  factor(pred_df$obs)
+)
+
+
+##  Probar tresholds
+
+thresholds <- seq(0, 1, by = 0.01)
+
+resultados <- t(sapply(thresholds, evaluar_threshold, data = pred_df))
+resultados <- as.data.frame(resultados)
+
+##  Mejor F1
+best_f1 <- resultados[which.max(resultados$F1), ]
+best_f1
+
+## El mejor treshold es 
+
+evaluar_threshold <- function(th, data) {
+  pred_class <- ifelse(data$pred > th, 1, 0)
+  
+  cm <- confusionMatrix(
+    factor(pred_class),
+    factor(data$obs),
+    positive = "1"
+  )
+  
+  c(
+    threshold = th,
+    Accuracy = cm$overall["Accuracy"],
+    Precision = cm$byClass["Precision"],
+    Recall = cm$byClass["Recall"],
+    F1 = cm$byClass["F1"]
+  )
+}
+
+
+best_th <- best_f1$threshold
+
+pred_final <- ifelse(pred_df$pred > best_th, 1, 0)
+
+confusionMatrix(
+  factor(pred_final),
+  factor(pred_df$obs)
+)
+
+
+# plot 
+plot(resultados$threshold, resultados$F1, type = "l", col = "blue")
+lines(resultados$threshold, resultados$Accuracy, col = "red")
+legend("bottomright", legend = c("F1", "Accuracy"), col = c("blue", "red"), lty = 1)
+
+# Predicciones de validación cruzada
+head(modelo_lpm$pred)
+
+# Usar ROC
+
+library(pROC)
+roc_obj <- roc(pred_df$obs, pred_df$pred)
+coords(roc_obj, "best", ret = "threshold")
+
+
+

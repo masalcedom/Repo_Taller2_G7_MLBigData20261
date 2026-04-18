@@ -24,7 +24,11 @@ for (path in c("02_output/figures",
 # ==============================================================
 # SECCIÓN 2: Cargue de paquetes
 # ==============================================================
+library(pacman)
 
+
+install.packages("rpart")
+install.packages("rpart.plot")
 
 # Lista de paquetes requeridos para el análisis completo
 required_packages <- c(
@@ -36,7 +40,9 @@ required_packages <- c(
   "stargazer",
   "tibble", 
   "caret",
-  "xtable"
+  "xtable",
+  "rpart",
+  "rpart.plot"
   
 )
 
@@ -59,6 +65,9 @@ lapply(required_packages, function(pkg) {
   library(pkg, character.only = TRUE)
 })
 
+
+library(rpart)
+library(rpart.plot)
 library(boot) 
 library(ggplot2)
 
@@ -69,7 +78,10 @@ p_load(rio,           # import/export data
        pROC,          # construir curva ROC y PR 
        caret,         # To estimate predictive models.
        MLmetrics,
-       Metrics        # To evaluate predictive models.
+       Metrics,        # To evaluate predictive models.
+       rpart,         # To implement decision trees.
+       rpart.plot   # To plot trees.
+       
 )
 
 # ==============================================================
@@ -77,7 +89,4 @@ p_load(rio,           # import/export data
 # ==============================================================
 
 #source("01_code/00_webscrapping.R")
-#source("01_code/01_data_cleaning.R")
-#source("01_code/02_seccion1.R")
-#source("01_code/03_seccion2.R")
-#source("01_code/04_seccion3.R")
+
